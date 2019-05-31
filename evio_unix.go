@@ -145,6 +145,9 @@ func serve(events Events, listeners []*listener) error {
 			packet:  make([]byte, 0xFFFF),
 			fdconns: make(map[int]*conn),
 		}
+		//mo:每个线程都把所有的listen fd都加到epoll,且是水平模式EPOLLLT, 即有新连接到来,所有线程都会唤醒,
+		//按道理,reuseport 模式下,就可以运行多个服务程序，每个程序内部的所有线程也会因为新连接到来而全部被唤醒
+		//reuseport的作用就是水平扩展。
 		for _, ln := range listeners {
 			l.poll.AddRead(ln.fd)
 		}
@@ -222,13 +225,15 @@ func loopRun(s *server, l *loop) {
 	}()
 
 	if l.idx == 0 && s.events.Tick != nil {
-		go loopTicker(s, l)
+		go loopTicker(s, l) //定期Trigger-->loopNote--> 执行events.Tick()，也就是定期执行events.Tick()，时间间隔看events.Tick()返回值。
 	}
 
 	//fmt.Println("-- loop started --", l.idx)
 	l.poll.Wait(func(fd int, note interface{}) error {
 		if fd == 0 {
-			return loopNote(s, l, note)
+			//l.poll.Trigger-> syscall.Write(p.wfd),只是想让EpollWait 醒来,遍历q.notes 执行iter(0, note), 就走到这里，
+			//l.poll.Trigger(errClosing) 就是把一个error 加到q.notes,
+			return loopNote(s, l, note) //loopNote 里面判断是err,就shutdown
 		}
 		c := l.fdconns[fd]
 		switch {
@@ -255,24 +260,26 @@ func loopTicker(s *server, l *loop) {
 	}
 }
 
+//epoll_event 的event默认为LT（水平触发）模式。
 func loopAccept(s *server, l *loop, fd int) error {
 	for i, ln := range s.lns {
 		if ln.fd == fd {
 			if len(s.loops) > 1 {
 				switch s.balance {
-				case LeastConnections:
+				case LeastConnections: //由处理连接数最少的线程处理
 					n := atomic.LoadInt32(&l.count)
 					for _, lp := range s.loops {
 						if lp.idx != l.idx {
 							if atomic.LoadInt32(&lp.count) < n {
-								return nil // do not accept
+								return nil // do not accept,
+								//有一个lp 处理的连接数比当前的少，那么当前的epoll 就不接受这个连接，由于是EPOLLLT模式，所有的epoll都醒来处理，所以count最小的那个epoll会处理
 							}
 						}
 					}
-				case RoundRobin:
+				case RoundRobin: //轮询调度
 					idx := int(atomic.LoadUintptr(&s.accepted)) % len(s.loops)
 					if idx != l.idx {
-						return nil // do not accept
+						return nil // do not accept，所有的epoll线程都醒来，发现没有轮询到自己，就不接受这个新连接。
 					}
 					atomic.AddUintptr(&s.accepted, 1)
 				}
