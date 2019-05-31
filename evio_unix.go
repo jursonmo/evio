@@ -145,9 +145,9 @@ func serve(events Events, listeners []*listener) error {
 			packet:  make([]byte, 0xFFFF),
 			fdconns: make(map[int]*conn),
 		}
-		//mo:Ã¿¸öÏß³Ì¶¼°ÑËùÓĞµÄlisten fd¶¼¼Óµ½epoll,ÇÒÊÇË®Æ½Ä£Ê½EPOLLLT, ¼´ÓĞĞÂÁ¬½Óµ½À´,ËùÓĞÏß³Ì¶¼»á»½ĞÑ,
-		//°´µÀÀí,reuseport Ä£Ê½ÏÂ,¾Í¿ÉÒÔÔËĞĞ¶à¸ö·şÎñ³ÌĞò£¬Ã¿¸ö³ÌĞòÄÚ²¿µÄËùÓĞÏß³ÌÒ²»áÒòÎªĞÂÁ¬½Óµ½À´¶øÈ«²¿±»»½ĞÑ
-		//reuseportµÄ×÷ÓÃ¾ÍÊÇË®Æ½À©Õ¹¡£
+		//mo:æ¯ä¸ªçº¿ç¨‹éƒ½æŠŠæ‰€æœ‰çš„listen fdéƒ½åŠ åˆ°epoll,ä¸”æ˜¯æ°´å¹³æ¨¡å¼EPOLLLT, å³æœ‰æ–°è¿æ¥åˆ°æ¥,æ‰€æœ‰çº¿ç¨‹éƒ½ä¼šå”¤é†’,
+		//æŒ‰é“ç†,reuseport æ¨¡å¼ä¸‹,å°±å¯ä»¥è¿è¡Œå¤šä¸ªæœåŠ¡ç¨‹åºï¼Œæ¯ä¸ªç¨‹åºå†…éƒ¨çš„æ‰€æœ‰çº¿ç¨‹ä¹Ÿä¼šå› ä¸ºæ–°è¿æ¥åˆ°æ¥è€Œå…¨éƒ¨è¢«å”¤é†’
+		//reuseportçš„ä½œç”¨å°±æ˜¯æ°´å¹³æ‰©å±•ã€‚
 		for _, ln := range listeners {
 			l.poll.AddRead(ln.fd)
 		}
@@ -225,15 +225,15 @@ func loopRun(s *server, l *loop) {
 	}()
 
 	if l.idx == 0 && s.events.Tick != nil {
-		go loopTicker(s, l) //¶¨ÆÚTrigger-->loopNote--> Ö´ĞĞevents.Tick()£¬Ò²¾ÍÊÇ¶¨ÆÚÖ´ĞĞevents.Tick()£¬Ê±¼ä¼ä¸ô¿´events.Tick()·µ»ØÖµ¡£
+		go loopTicker(s, l) //å®šæœŸTrigger-->loopNote--> æ‰§è¡Œevents.Tick()ï¼Œä¹Ÿå°±æ˜¯å®šæœŸæ‰§è¡Œevents.Tick()ï¼Œæ—¶é—´é—´éš”çœ‹events.Tick()è¿”å›å€¼ã€‚
 	}
 
 	//fmt.Println("-- loop started --", l.idx)
 	l.poll.Wait(func(fd int, note interface{}) error {
 		if fd == 0 {
-			//l.poll.Trigger-> syscall.Write(p.wfd),Ö»ÊÇÏëÈÃEpollWait ĞÑÀ´,±éÀúq.notes Ö´ĞĞiter(0, note), ¾Í×ßµ½ÕâÀï£¬
-			//l.poll.Trigger(errClosing) ¾ÍÊÇ°ÑÒ»¸öerror ¼Óµ½q.notes,
-			return loopNote(s, l, note) //loopNote ÀïÃæÅĞ¶ÏÊÇerr,¾Íshutdown
+			//l.poll.Trigger-> syscall.Write(p.wfd),åªæ˜¯æƒ³è®©EpollWait é†’æ¥,éå†q.notes æ‰§è¡Œiter(0, note), å°±èµ°åˆ°è¿™é‡Œï¼Œ
+			//l.poll.Trigger(errClosing) å°±æ˜¯æŠŠä¸€ä¸ªerror åŠ åˆ°q.notes,
+			return loopNote(s, l, note) //loopNote é‡Œé¢åˆ¤æ–­æ˜¯err,å°±shutdown
 		}
 		c := l.fdconns[fd]
 		switch {
@@ -260,26 +260,26 @@ func loopTicker(s *server, l *loop) {
 	}
 }
 
-//epoll_event µÄeventÄ¬ÈÏÎªLT£¨Ë®Æ½´¥·¢£©Ä£Ê½¡£
+//epoll_event çš„eventé»˜è®¤ä¸ºLTï¼ˆæ°´å¹³è§¦å‘ï¼‰æ¨¡å¼ã€‚
 func loopAccept(s *server, l *loop, fd int) error {
 	for i, ln := range s.lns {
 		if ln.fd == fd {
 			if len(s.loops) > 1 {
 				switch s.balance {
-				case LeastConnections: //ÓÉ´¦ÀíÁ¬½ÓÊı×îÉÙµÄÏß³Ì´¦Àí
+				case LeastConnections: //ç”±å¤„ç†è¿æ¥æ•°æœ€å°‘çš„çº¿ç¨‹å¤„ç†
 					n := atomic.LoadInt32(&l.count)
 					for _, lp := range s.loops {
 						if lp.idx != l.idx {
 							if atomic.LoadInt32(&lp.count) < n {
 								return nil // do not accept,
-								//ÓĞÒ»¸ölp ´¦ÀíµÄÁ¬½ÓÊı±Èµ±Ç°µÄÉÙ£¬ÄÇÃ´µ±Ç°µÄepoll ¾Í²»½ÓÊÜÕâ¸öÁ¬½Ó£¬ÓÉÓÚÊÇEPOLLLTÄ£Ê½£¬ËùÓĞµÄepoll¶¼ĞÑÀ´´¦Àí£¬ËùÒÔcount×îĞ¡µÄÄÇ¸öepoll»á´¦Àí
+								//æœ‰ä¸€ä¸ªlp å¤„ç†çš„è¿æ¥æ•°æ¯”å½“å‰çš„å°‘ï¼Œé‚£ä¹ˆå½“å‰çš„epoll å°±ä¸æ¥å—è¿™ä¸ªè¿æ¥ï¼Œç”±äºæ˜¯EPOLLLTæ¨¡å¼ï¼Œæ‰€æœ‰çš„epolléƒ½é†’æ¥å¤„ç†ï¼Œæ‰€ä»¥countæœ€å°çš„é‚£ä¸ªepollä¼šå¤„ç†
 							}
 						}
 					}
-				case RoundRobin: //ÂÖÑ¯µ÷¶È
+				case RoundRobin: //è½®è¯¢è°ƒåº¦
 					idx := int(atomic.LoadUintptr(&s.accepted)) % len(s.loops)
 					if idx != l.idx {
-						return nil // do not accept£¬ËùÓĞµÄepollÏß³Ì¶¼ĞÑÀ´£¬·¢ÏÖÃ»ÓĞÂÖÑ¯µ½×Ô¼º£¬¾Í²»½ÓÊÜÕâ¸öĞÂÁ¬½Ó¡£
+						return nil // do not acceptï¼Œæ‰€æœ‰çš„epollçº¿ç¨‹éƒ½é†’æ¥ï¼Œå‘ç°æ²¡æœ‰è½®è¯¢åˆ°è‡ªå·±ï¼Œå°±ä¸æ¥å—è¿™ä¸ªæ–°è¿æ¥ã€‚
 					}
 					atomic.AddUintptr(&s.accepted, 1)
 				}
