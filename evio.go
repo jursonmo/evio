@@ -95,6 +95,7 @@ type Events struct {
 	LoadBalance LoadBalance
 	// Serving fires when the server can accept connections. The server
 	// parameter has information and various utilities.
+	//准备开始服务时调用，一般用来打印一些服务运行的参数
 	Serving func(server Server) (action Action)
 	// Opened fires when a new connection has opened.
 	// The info parameter has information about the connection such as
@@ -118,6 +119,7 @@ type Events struct {
 	// Data fires when a connection sends the server data.
 	// The in parameter is the incoming data.
 	// Use the out return value to write data to the connection.
+	//events.Data 是数据处理回调函数，读到数据时会调用它，(c *conn) Wake()也会调用它,利用out返回值来注册写事件
 	Data func(c Conn, in []byte) (out []byte, action Action)
 	// Tick fires immediately after the server starts and will fire again
 	// following the duration specified by the delay return value.

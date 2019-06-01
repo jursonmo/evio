@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	reuseport "github.com/kavu/go_reuseport"
 	"github.com/jursonmo/evio/internal"
+	reuseport "github.com/kavu/go_reuseport"
 )
 
 type conn struct {
@@ -212,11 +212,12 @@ func loopNote(s *server, l *loop, note interface{}) error {
 		if l.fdconns[v.fd] != v {
 			return nil // ignore stale wakes
 		}
-		return loopWake(s, l, v)
+		return loopWake(s, l, v) //(c *conn) Wake()-->c.loop.poll.Trigger(c)就是让loopWake来执行event.Data()
 	}
 	return err
 }
 
+//events.Data 是数据处理回调函数，读到数据时会调用它，(c *conn) Wake()也会调用它
 func loopRun(s *server, l *loop) {
 	defer func() {
 		//fmt.Println("-- loop stopped --", l.idx)
@@ -224,6 +225,7 @@ func loopRun(s *server, l *loop) {
 		s.wg.Done()
 	}()
 
+	//如果events.Tick不为空，就由第一个线程定期执行events.Tick()
 	if l.idx == 0 && s.events.Tick != nil {
 		go loopTicker(s, l) //定期Trigger-->loopNote--> 执行events.Tick()，也就是定期执行events.Tick()，时间间隔看events.Tick()返回值。
 	}
@@ -238,14 +240,18 @@ func loopRun(s *server, l *loop) {
 		c := l.fdconns[fd]
 		switch {
 		case c == nil:
-			return loopAccept(s, l, fd)
+			return loopAccept(s, l, fd) //新的连接到来，是会注册AddReadWrite 读写事件的,写事件肯定能立即返回啊
 		case !c.opened:
+			//c的初始值c.opened==false,即c第一次可读写时(由于新的连接注册读写事件,写事件一定返回,这里肯定执行),
+			//就会先调用loopOpened,执行用户定义的events.Opened(),它可能发送一些数据,如果没有要发送的，就只注册ModRead
+			//也就是大多情况下只在注册读事件的状态，没有注册写的状态，如果要写的操作，(c *conn) Wake()->event.Data()这个回调返回out内容,就注册写事件
 			return loopOpened(s, l, c)
 		case len(c.out) > 0:
 			return loopWrite(s, l, c)
 		case c.action != None:
 			return loopAction(s, l, c)
 		default:
+			//如果上面条件都不满足,那就是有数据可读,尝试执行events.Data,如果执行的结果需要写数据,就注册ModReadWrite
 			return loopRead(s, l, c)
 		}
 	})
@@ -421,6 +427,7 @@ func loopWake(s *server, l *loop, c *conn) error {
 		c.out = append([]byte{}, out...)
 	}
 	if len(c.out) != 0 || c.action != None {
+		//如果有数据要发送，则注册写事件，如果action是close,注册读写事件后epoll wait也会立刻返回
 		l.poll.ModReadWrite(c.fd)
 	}
 	return nil
@@ -429,6 +436,7 @@ func loopWake(s *server, l *loop, c *conn) error {
 func loopRead(s *server, l *loop, c *conn) error {
 	var in []byte
 	n, err := syscall.Read(c.fd, l.packet)
+	//由于是水平触发模式，不需要读完所有数据，只要还有数据没读完，就会有读事件触发
 	if n == 0 || err != nil {
 		if err == syscall.EAGAIN {
 			return nil
