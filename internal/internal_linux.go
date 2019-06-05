@@ -41,7 +41,7 @@ func (p *Poll) Close() error {
 	return syscall.Close(p.fd)
 }
 
-// Trigger ...
+// Trigger ...是通过向wfd发送数据来唤醒epoll_wait, 让线程去处理已经注册的note,
 func (p *Poll) Trigger(note interface{}) error {
 	p.notes.Add(note)
 	_, err := syscall.Write(p.wfd, []byte{0, 0, 0, 0, 0, 0, 0, 1})

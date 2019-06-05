@@ -252,6 +252,8 @@ func loopRun(s *server, l *loop) {
 			return loopAction(s, l, c)
 		default:
 			//如果上面条件都不满足,那就是有数据可读,尝试执行events.Data,如果执行的结果需要写数据,就注册ModReadWrite
+			//如果events.Data处理函数返回的action 不为none,也注册ModReadWrite,注册write事件的另一个作用就再次唤醒epoll_wait,
+			//然后再判断c.action != None: 执行 loopAction
 			return loopRead(s, l, c)
 		}
 	})
@@ -354,6 +356,7 @@ func loopUDPRead(s *server, l *loop, lnidx, fd int) error {
 	return nil
 }
 
+//第一次c开始工作时,先执行events.Opened(), 因为接受到一个新连接是默认注册读写事件的,写事件可以马上唤醒epoll_wait,再走到loopOpened处理
 func loopOpened(s *server, l *loop, c *conn) error {
 	c.opened = true
 	c.addrIndex = c.lnidx
@@ -372,7 +375,7 @@ func loopOpened(s *server, l *loop, c *conn) error {
 			}
 		}
 	}
-	if len(c.out) == 0 && c.action == None {
+	if len(c.out) == 0 && c.action == None { //只有没有数据可写,action也为none,才剔除写事件, ModRead就是剔除写事件，只留读事件
 		l.poll.ModRead(c.fd)
 	}
 	return nil
