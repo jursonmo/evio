@@ -457,7 +457,7 @@ func loopRead(s *server, l *loop, c *conn) error {
 			c.out = append([]byte{}, out...)
 		}
 	}
-	if len(c.out) != 0 || c.action != None {
+	if len(c.out) != 0 || c.action != None { //c.action != None把写事件加上,这样epoll_wait可以快速醒来去执行loopAction
 		l.poll.ModReadWrite(c.fd)
 	}
 	return nil
