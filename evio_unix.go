@@ -397,6 +397,7 @@ func loopWrite(s *server, l *loop, c *conn) error {
 	} else {
 		c.out = c.out[n:]
 	}
+	//如果还有数据没发送完，就继续保留读写事件，等待下次发送，这可能发生bug,即如果收到数据需要回应，就会替换未发送完的数据
 	if len(c.out) == 0 && c.action == None {
 		l.poll.ModRead(c.fd)
 	}
